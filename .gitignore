@@ -1,3 +1,4 @@
+
 # Miscellaneous
 *.class
 *.log
@@ -18,9 +19,7 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
+# VS Code
 #.vscode/
 
 # Flutter/Dart/Pub related
@@ -39,14 +38,20 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android Studio build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
-# Android build output (generated)
 android/build/
 android/.gradle/
 android/app/build/
 android/local.properties
+
+# Signing files
 *.jks
-*.keystoreassets/models/player/Teen.glb
+*.keystore
+
+# 3D models and binary model assets
+*.glb
+*.gltf
+*.bin
