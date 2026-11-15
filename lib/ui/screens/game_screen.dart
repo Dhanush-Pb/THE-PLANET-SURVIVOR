@@ -1,5 +1,7 @@
-
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:jungle_advanture/game/scenes/jungle_scene.dart';
 
@@ -18,9 +20,12 @@ class _GameScreenState extends State<GameScreen> {
   final Scene _scene = Scene();
 
   final GamePlayer _player = GamePlayer();
-
-  late final PlayerController _controller = PlayerController(_player);
   final GameCamera _camera = GameCamera();
+
+  // Created in initState, because it needs _player and _camera.
+  late final PlayerController _controller;
+
+  final FocusNode _focus = FocusNode();
 
   bool _ready = false;
   bool _loadingFailed = false;
@@ -28,11 +33,12 @@ class _GameScreenState extends State<GameScreen> {
 
   String _error = '';
 
-  int _health = 100;
+  final int _health = 100;
 
   @override
   void initState() {
     super.initState();
+    _controller = PlayerController(_player, _camera);
     _initializeGame();
   }
 
@@ -40,10 +46,8 @@ class _GameScreenState extends State<GameScreen> {
     try {
       await Scene.initializeStaticResources();
 
-      // Load medieval village environment.
       await JungleEnvironment.loadInto(_scene);
 
-      // Load player.
       await _player.load();
       _scene.add(_player.node!);
 
@@ -65,15 +69,68 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
+  // ------------------------------------------------------------------
+  // Keyboard (web / desktop): WASD or arrows, Shift to run
+  // ------------------------------------------------------------------
+  static final Set<LogicalKeyboardKey> _moveKeys = {
+    LogicalKeyboardKey.keyW,
+    LogicalKeyboardKey.keyA,
+    LogicalKeyboardKey.keyS,
+    LogicalKeyboardKey.keyD,
+    LogicalKeyboardKey.arrowUp,
+    LogicalKeyboardKey.arrowDown,
+    LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight,
+    LogicalKeyboardKey.shiftLeft,
+    LogicalKeyboardKey.shiftRight,
+  };
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (!_moveKeys.contains(event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
+
+    // Ignore auto-repeat so the animation does not restart.
+    if (event is KeyRepeatEvent) return KeyEventResult.handled;
+
+    final keys = HardwareKeyboard.instance;
+    bool down(LogicalKeyboardKey key) => keys.isLogicalKeyPressed(key);
+
+    final forward =
+        down(LogicalKeyboardKey.keyW) || down(LogicalKeyboardKey.arrowUp);
+    final back =
+        down(LogicalKeyboardKey.keyS) || down(LogicalKeyboardKey.arrowDown);
+    final left =
+        down(LogicalKeyboardKey.keyA) || down(LogicalKeyboardKey.arrowLeft);
+    final right =
+        down(LogicalKeyboardKey.keyD) || down(LogicalKeyboardKey.arrowRight);
+    final shift = down(LogicalKeyboardKey.shiftLeft) ||
+        down(LogicalKeyboardKey.shiftRight);
+
+    _controller.sprinting = _sprinting || shift;
+
+    final h = (right ? 1.0 : 0.0) - (left ? 1.0 : 0.0);
+    final v = (forward ? 1.0 : 0.0) - (back ? 1.0 : 0.0);
+
+    if (h == 0 && v == 0) {
+      _controller.stopMove();
+    } else {
+      _controller.startMove(h, v);
+    }
+
+    return KeyEventResult.handled;
+  }
+
+  // ------------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------------
   Widget _directionButton(
     IconData icon,
     double horizontal,
     double vertical,
   ) {
     return GestureDetector(
-      onTapDown: (_) {
-        _controller.startMove(horizontal, vertical);
-      },
+      onTapDown: (_) => _controller.startMove(horizontal, vertical),
       onTapUp: (_) => _controller.stopMove(),
       onTapCancel: _controller.stopMove,
       child: Container(
@@ -159,9 +216,26 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
+  Widget _hint() {
+    return const Positioned(
+      bottom: 14,
+      left: 0,
+      right: 0,
+      child: IgnorePointer(
+        child: Center(
+          child: Text(
+            'Drag to look  •  Scroll to zoom  •  WASD to move  •  Shift to run',
+            style: TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -195,22 +269,41 @@ class _GameScreenState extends State<GameScreen> {
     }
 
     return Scaffold(
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: SceneView(
-              _scene,
-              cameraBuilder: (elapsed) {
-                return _camera.build(
-                  playerX: _player.x,
-                  playerZ: _player.z,
-                );
-              },
+      body: Focus(
+        focusNode: _focus,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Listener(
+                onPointerDown: (_) => _focus.requestFocus(),
+                // Mouse drag or finger drag turns the camera.
+                onPointerMove: (event) {
+                  _camera.rotate(event.delta.dx, event.delta.dy);
+                },
+                // Mouse wheel zooms.
+                onPointerSignal: (event) {
+                  if (event is PointerScrollEvent) {
+                    _camera.zoom(event.scrollDelta.dy * 0.01);
+                  }
+                },
+                child: SceneView(
+                  _scene,
+                  cameraBuilder: (elapsed) {
+                    return _camera.build(
+                      playerX: _player.x,
+                      playerZ: _player.z,
+                    );
+                  },
+                ),
+              ),
             ),
-          ),
-          _gameHud(),
-          _movementControls(),
-        ],
+            _gameHud(),
+            _movementControls(),
+            if (kIsWeb) _hint(),
+          ],
+        ),
       ),
     );
   }
