@@ -13,7 +13,7 @@ class WildStepApp extends StatelessWidget {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'THE WILD STEP',
-      home: GameScreen(),
+      home: GameScreen(),//!
     );
   }
 }
