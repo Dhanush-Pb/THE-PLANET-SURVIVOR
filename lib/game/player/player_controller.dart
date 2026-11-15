@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import '../camera/game_camera.dart';
@@ -10,90 +9,87 @@ class PlayerController {
   final GamePlayer player;
   final GameCamera camera;
 
-  Timer? _timer;
+  static const double walkSpeed = 4.2; // units per second
+  static const double runSpeed = 8.5;
 
-  double _horizontal = 0; // -1 left, +1 right
-  double _vertical = 0; // +1 forward, -1 back
+  double _horizontal = 0; // right is +1
+  double _vertical = 0; // forward is +1
 
   bool _sprinting = false;
-  bool? _animationRunning; // remembers the current animation
+  bool? _animationRunning;
 
   bool get sprinting => _sprinting;
 
   set sprinting(bool value) {
     if (_sprinting == value) return;
-
     _sprinting = value;
-
-    if (_isMoving) {
-      _setAnimation();
-    }
+    if (_isMoving) _setAnimation();
   }
 
   bool get _isMoving => _horizontal != 0 || _vertical != 0;
 
-  double get speed => _sprinting ? 0.12 : 0.065;
-
   void _setAnimation() {
+    if (!player.grounded) return; // jump animation stays in the air
     if (_animationRunning == _sprinting) return;
     _animationRunning = _sprinting;
     player.playMovementAnimation(running: _sprinting);
   }
 
-  /// horizontal: -1 left, +1 right. vertical: +1 forward, -1 back.
-  void startMove(double horizontal, double vertical) {
+  /// Joystick or keyboard input. Both values from -1 to 1.
+  void setInput(double horizontal, double vertical) {
+    final wasMoving = _isMoving;
+
     _horizontal = horizontal;
     _vertical = vertical;
 
-    if (!_isMoving) return;
-
-    _setAnimation();
-
-    if (_timer != null) return;
-
-    _timer = Timer.periodic(
-      const Duration(milliseconds: 33),
-      (_) => _update(),
-    );
-  }
-
-  void _update() {
-    if (!_isMoving) return;
-
-    final length = math.sqrt(
-      _horizontal * _horizontal + _vertical * _vertical,
-    );
-
-    if (length == 0) return;
-
-    final h = _horizontal / length;
-    final v = _vertical / length;
-
-    // Direction the camera looks at, on the ground.
-    final yaw = camera.yaw;
-    final forwardX = -math.sin(yaw);
-    final forwardZ = -math.cos(yaw);
-
-    // Camera's right side.
-    final rightX = -forwardZ;
-    final rightZ = forwardX;
-
-    player.move(
-      (rightX * h + forwardX * v) * speed,
-      (rightZ * h + forwardZ * v) * speed,
-    );
-  }
-
-  void stopMove() {
-    _horizontal = 0;
-    _vertical = 0;
-
-    _timer?.cancel();
-    _timer = null;
-
-    if (_animationRunning != null) {
+    if (_isMoving) {
+      _setAnimation();
+    } else if (wasMoving) {
       _animationRunning = null;
-      player.playIdleAnimation();
+      if (player.grounded) player.playIdleAnimation();
+    }
+  }
+
+  void stopMove() => setInput(0, 0);
+
+  void jump() {
+    player.jump();
+  }
+
+  /// Call once per frame.
+  void update(double dt) {
+    if (_isMoving) {
+      final length = math.sqrt(
+        _horizontal * _horizontal + _vertical * _vertical,
+      );
+
+      final strength = math.min(length, 1.0);
+      final h = _horizontal / length;
+      final v = _vertical / length;
+
+      // Directions relative to where the camera looks.
+      final forwardX = -math.sin(camera.yaw);
+      final forwardZ = -math.cos(camera.yaw);
+      final rightX = -forwardZ;
+      final rightZ = forwardX;
+
+      final speed = (_sprinting ? runSpeed : walkSpeed) * strength * dt;
+
+      player.move(
+        (rightX * h + forwardX * v) * speed,
+        (rightZ * h + forwardZ * v) * speed,
+      );
+    }
+
+    final landed = player.update(dt);
+
+    if (landed) {
+      _animationRunning = null;
+      if (_isMoving) {
+        _setAnimation();
+      } else {
+        player.playIdleAnimation();
+      }
     }
   }
 

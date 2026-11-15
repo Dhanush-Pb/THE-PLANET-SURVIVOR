@@ -1,13 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:jungle_advanture/game/scenes/jungle_scene.dart';
+import 'package:jungle_advanture/ui/widgets/sky_baground.dart';
 
 import '../../game/camera/game_camera.dart';
 import '../../game/player/player.dart';
 import '../../game/player/player_controller.dart';
+import '../../game/systems/coin_system.dart';
+import '../../game/world/world_builder.dart';
+import '../widgets/game_controls.dart';
+import '../widgets/joystick.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -16,29 +21,44 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> {
+class _GameScreenState extends State<GameScreen>
+    with SingleTickerProviderStateMixin {
   final Scene _scene = Scene();
 
   final GamePlayer _player = GamePlayer();
   final GameCamera _camera = GameCamera();
-
-  // Created in initState, because it needs _player and _camera.
-  late final PlayerController _controller;
-
+  final CoinSystem _coins = CoinSystem();
+  final ValueNotifier<double> _skyTime = ValueNotifier<double>(0);
   final FocusNode _focus = FocusNode();
+
+  late final PlayerController _controller;
+  late final Ticker _ticker;
+
+  double _lastTime = 0;
 
   bool _ready = false;
   bool _loadingFailed = false;
   bool _sprinting = false;
 
-  String _error = '';
+  /// true: joystick on the right, buttons on the left.
+  bool _movementOnRight = true;
 
+  String _error = '';
   final int _health = 100;
 
   @override
   void initState() {
     super.initState();
+
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
     _controller = PlayerController(_player, _camera);
+    _ticker = createTicker(_onTick);
+
     _initializeGame();
   }
 
@@ -46,16 +66,16 @@ class _GameScreenState extends State<GameScreen> {
     try {
       await Scene.initializeStaticResources();
 
-      await JungleEnvironment.loadInto(_scene);
+      await WorldBuilder.loadInto(_scene);
+      _coins.build(_scene, WorldBuilder.coinSpots);
 
       await _player.load();
       _scene.add(_player.node!);
 
       if (!mounted) return;
 
-      setState(() {
-        _ready = true;
-      });
+      setState(() => _ready = true);
+      _ticker.start();
     } catch (error, stackTrace) {
       debugPrint('Game initialization error: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -69,10 +89,20 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
+  void _onTick(Duration elapsed) {
+    final t = elapsed.inMicroseconds / 1000000.0;
+    final dt = (t - _lastTime).clamp(0.0, 0.1).toDouble();
+    _lastTime = t;
+
+    _controller.update(dt);
+    _coins.update(t, _player.x, _player.y, _player.z);
+    _skyTime.value = t;
+  }
+
   // ------------------------------------------------------------------
-  // Keyboard (web / desktop): WASD or arrows, Shift to run
+  // Keyboard: WASD / arrows, Space jump, Shift run
   // ------------------------------------------------------------------
-  static final Set<LogicalKeyboardKey> _moveKeys = {
+  static final Set<LogicalKeyboardKey> _gameKeys = {
     LogicalKeyboardKey.keyW,
     LogicalKeyboardKey.keyA,
     LogicalKeyboardKey.keyS,
@@ -83,14 +113,19 @@ class _GameScreenState extends State<GameScreen> {
     LogicalKeyboardKey.arrowRight,
     LogicalKeyboardKey.shiftLeft,
     LogicalKeyboardKey.shiftRight,
+    LogicalKeyboardKey.space,
   };
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (!_moveKeys.contains(event.logicalKey)) {
+    if (!_gameKeys.contains(event.logicalKey)) {
       return KeyEventResult.ignored;
     }
 
-    // Ignore auto-repeat so the animation does not restart.
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      if (event is KeyDownEvent) _controller.jump();
+      return KeyEventResult.handled;
+    }
+
     if (event is KeyRepeatEvent) return KeyEventResult.handled;
 
     final keys = HardwareKeyboard.instance;
@@ -109,14 +144,10 @@ class _GameScreenState extends State<GameScreen> {
 
     _controller.sprinting = _sprinting || shift;
 
-    final h = (right ? 1.0 : 0.0) - (left ? 1.0 : 0.0);
-    final v = (forward ? 1.0 : 0.0) - (back ? 1.0 : 0.0);
-
-    if (h == 0 && v == 0) {
-      _controller.stopMove();
-    } else {
-      _controller.startMove(h, v);
-    }
+    _controller.setInput(
+      (right ? 1.0 : 0.0) - (left ? 1.0 : 0.0),
+      (forward ? 1.0 : 0.0) - (back ? 1.0 : 0.0),
+    );
 
     return KeyEventResult.handled;
   }
@@ -124,107 +155,135 @@ class _GameScreenState extends State<GameScreen> {
   // ------------------------------------------------------------------
   // UI
   // ------------------------------------------------------------------
-  Widget _directionButton(
-    IconData icon,
-    double horizontal,
-    double vertical,
-  ) {
-    return GestureDetector(
-      onTapDown: (_) => _controller.startMove(horizontal, vertical),
-      onTapUp: (_) => _controller.stopMove(),
-      onTapCancel: _controller.stopMove,
-      child: Container(
-        width: 58,
-        height: 58,
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.65),
-          border: Border.all(color: Colors.white54),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: 30,
-        ),
-      ),
-    );
-  }
-
-  Widget _movementControls() {
+  Widget _hud() {
     return Positioned(
-      left: 20,
-      bottom: 20,
-      child: Column(
-        children: [
-          _directionButton(Icons.keyboard_arrow_up, 0, 1),
-          Row(
-            children: [
-              _directionButton(Icons.keyboard_arrow_left, -1, 0),
-              const SizedBox(width: 66),
-              _directionButton(Icons.keyboard_arrow_right, 1, 0),
-            ],
-          ),
-          _directionButton(Icons.keyboard_arrow_down, 0, -1),
-        ],
-      ),
-    );
-  }
-
-  Widget _gameHud() {
-    return Positioned(
-      top: 18,
+      top: 14,
       left: 20,
       right: 20,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'THE WILD STEP',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
+      child: SafeArea(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _chip(
+              Icons.monetization_on,
+              Colors.amber,
+              ValueListenableBuilder<int>(
+                valueListenable: _coins.collected,
+                builder: (context, value, child) => Text(
+                  '$value / ${_coins.total}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
             ),
-          ),
-          Row(
-            children: [
-              const Icon(Icons.favorite, color: Colors.red),
-              const SizedBox(width: 8),
+            const SizedBox(width: 10),
+            _chip(
+              Icons.favorite,
+              Colors.redAccent,
               Text(
-                '$_health / 100',
+                '$_health',
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-              const SizedBox(width: 20),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    _sprinting = !_sprinting;
-                    _controller.sprinting = _sprinting;
-                  });
-                },
-                child: Text(_sprinting ? 'RUN ON' : 'RUN'),
+            ),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => setState(() => _movementOnRight = !_movementOnRight),
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white54),
+                ),
+                child: const Icon(Icons.swap_horiz, color: Colors.white),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(IconData icon, Color color, Widget child) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 6),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _controlsLayer() {
+    final pad = MediaQuery.of(context).padding;
+    final onRight = _movementOnRight;
+
+    final stick = Positioned(
+      bottom: 24 + pad.bottom,
+      left: onRight ? null : 28 + pad.left,
+      right: onRight ? 28 + pad.right : null,
+      child: Joystick(
+        size: 150,
+        onChanged: (x, y) => _controller.setInput(x, y),
+      ),
+    );
+
+    final buttons = Positioned(
+      bottom: 24 + pad.bottom,
+      left: onRight ? 28 + pad.left : null,
+      right: onRight ? null : 28 + pad.right,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ActionButton(
+            icon: Icons.directions_run,
+            size: 58,
+            active: _sprinting,
+            onDown: () {
+              setState(() {
+                _sprinting = !_sprinting;
+                _controller.sprinting = _sprinting;
+              });
+            },
+          ),
+          const SizedBox(width: 18),
+          ActionButton(
+            icon: Icons.keyboard_double_arrow_up,
+            size: 84,
+            onDown: _controller.jump,
           ),
         ],
       ),
     );
+
+    return Stack(children: [stick, buttons]);
   }
 
   Widget _hint() {
     return const Positioned(
-      bottom: 14,
+      bottom: 10,
       left: 0,
       right: 0,
       child: IgnorePointer(
         child: Center(
           child: Text(
-            'Drag to look  •  Scroll to zoom  •  WASD to move  •  Shift to run',
+            'Drag to look  •  Scroll to zoom  •  WASD move  •  Space jump  •  Shift run',
             style: TextStyle(color: Colors.white70, fontSize: 12),
           ),
         ),
@@ -234,8 +293,13 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+    _ticker.dispose();
     _controller.dispose();
     _focus.dispose();
+    _skyTime.dispose();
     super.dispose();
   }
 
@@ -261,9 +325,7 @@ class _GameScreenState extends State<GameScreen> {
       return const Scaffold(
         backgroundColor: Color(0xFF101810),
         body: Center(
-          child: CircularProgressIndicator(
-            color: Colors.greenAccent,
-          ),
+          child: CircularProgressIndicator(color: Colors.greenAccent),
         ),
       );
     }
@@ -275,14 +337,16 @@ class _GameScreenState extends State<GameScreen> {
         onKeyEvent: _onKey,
         child: Stack(
           children: [
+            // Sky is painted behind the 3D view (the 3D view is transparent).
+            Positioned.fill(
+              child: SkyBackground(camera: _camera, time: _skyTime),
+            ),
             Positioned.fill(
               child: Listener(
                 onPointerDown: (_) => _focus.requestFocus(),
-                // Mouse drag or finger drag turns the camera.
                 onPointerMove: (event) {
                   _camera.rotate(event.delta.dx, event.delta.dy);
                 },
-                // Mouse wheel zooms.
                 onPointerSignal: (event) {
                   if (event is PointerScrollEvent) {
                     _camera.zoom(event.scrollDelta.dy * 0.01);
@@ -293,14 +357,15 @@ class _GameScreenState extends State<GameScreen> {
                   cameraBuilder: (elapsed) {
                     return _camera.build(
                       playerX: _player.x,
+                      playerY: _player.y,
                       playerZ: _player.z,
                     );
                   },
                 ),
               ),
             ),
-            _gameHud(),
-            _movementControls(),
+            _hud(),
+            _controlsLayer(),
             if (kIsWeb) _hint(),
           ],
         ),

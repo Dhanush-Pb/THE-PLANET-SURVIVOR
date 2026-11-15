@@ -12,20 +12,15 @@ class PlayerAnimation {
   String? _currentName;
 
   List<String> get animationNames =>
-      player.parsedAnimations.map((animation) => animation.name).toList();
+      player.parsedAnimations.map((a) => a.name).toList();
 
   void play(String name) {
     if (_currentName == name) return;
 
-    final animation = player.parsedAnimations
-        .cast<Animation?>()
-        .firstWhere(
-          (item) => item?.name == name,
-          orElse: () => null,
-        );
+    final animation = player.findAnimationByName(name);
 
     if (animation == null) {
-      print('Animation not found: $name');
+      print('Animation unavailable: $name');
       return;
     }
 
@@ -43,17 +38,59 @@ class PlayerAnimation {
     _currentName = name;
   }
 
-  void playIdle() => play('Idle-loop');
+  String? _find(List<String> keywords) {
+    for (final name in animationNames) {
+      final lower = name.toLowerCase();
 
-  void playForward() => play('Walk-loop');
+      if (keywords.every(lower.contains)) {
+        return name;
+      }
+    }
 
-  void playBackward() => play('Walk backwards-loop');
+    return null;
+  }
 
-  void playLeft() => play('Strafe left-loop');
+  void playIdle() {
+    play(_find(['idle']) ?? 'Idle-loop');
+  }
 
-  void playRight() => play('Strafe right-loop');
+  void playWalk() {
+    play(_find(['walk']) ?? 'Walk-loop');
+  }
 
-  void playRun() => play('Run-loop');
+  void playRun() {
+    play(_find(['run']) ?? 'Run-loop');
+  }
+
+  void playBackward() {
+    play(_find(['backward']) ?? 'Walk backwards-loop');
+  }
+
+  void playLeft() {
+    play(_find(['strafe', 'left']) ?? 'Strafe left-loop');
+  }
+
+  void playRight() {
+    play(_find(['strafe', 'right']) ?? 'Strafe right-loop');
+  }
+
+  void playJump() {
+    final name = _find(['jump']) ?? _find(['leap']);
+
+    if (name != null) play(name);
+  }
+
+  void playFall() {
+    final name = _find(['fall']);
+
+    if (name != null) play(name);
+  }
+
+  void playLand() {
+    final name = _find(['land']);
+
+    if (name != null) play(name);
+  }
 
   void stop() {
     _currentClip?.stop();

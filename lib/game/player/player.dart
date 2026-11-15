@@ -4,22 +4,29 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-import '../scenes/jungle_scene.dart';
+import '../physics/collision.dart';
+import '../systems/jump_system.dart';
+import '../world/world_builder.dart';
 import 'player_animation.dart';
 
 class GamePlayer {
   static const String modelPath = 'assets/models/player/Teen.glb';
 
-  /// Imported models face -z, so the character is turned by 180 degrees.
-  /// If it still walks with its back or side first, try:
-  ///   0, math.pi / 2, or -math.pi / 2
+  /// Imported models face -z. If the character walks with its back or side
+  /// first, try 0, math.pi / 2, or -math.pi / 2.
   static const double facingOffset = math.pi;
 
-  /// How fast the character turns (0.1 slow, 0.4 fast).
   static const double turnSpeed = 0.22;
+  static const double bodyRadius = 0.6;
+
+  /// Name of the jump animation inside your model.
+  /// Check the console line "Available animations" for the real names.
+  static const String jumpAnimation = 'Jump-loop';
 
   Node? node;
   PlayerAnimation? animation;
+
+  final JumpSystem _jump = JumpSystem();
 
   double x = 0;
   double z = 5;
@@ -27,6 +34,8 @@ class GamePlayer {
   double _yaw = 0;
   double _lastAppliedYaw = double.nan;
 
+  double get y => _jump.y;
+  bool get grounded => _jump.grounded;
   bool get isLoaded => node != null;
 
   Future<void> load() async {
@@ -50,19 +59,34 @@ class GamePlayer {
     x += dx;
     z += dz;
 
-    final limit = JungleEnvironment.halfExtent;
+    final pushed = Collision.pushOut(x, z, bodyRadius, WorldBuilder.obstacles);
+    x = pushed.$1;
+    z = pushed.$2;
+
+    final limit = WorldBuilder.halfExtent;
     x = x.clamp(-limit, limit);
     z = z.clamp(-limit, limit);
 
-    n.position = vm.Vector3(x, 0, z);
+    n.position = vm.Vector3(x, y, z);
 
     if (dx != 0 || dz != 0) {
       _turnToward(math.atan2(dx, dz) + facingOffset);
     }
   }
 
-  /// Turns smoothly along the shortest way, so the character always
-  /// faces where it is going instead of walking backwards.
+  bool jump() {
+    if (!_jump.jump()) return false;
+    _playJumpAnimation();
+    return true;
+  }
+
+  /// Returns true on the frame the player lands.
+  bool update(double dt) {
+    final landed = _jump.update(dt);
+    node?.position = vm.Vector3(x, y, z);
+    return landed;
+  }
+
   void _turnToward(double target) {
     var diff = target - _yaw;
 
@@ -85,6 +109,14 @@ class GamePlayer {
     node!.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _yaw);
   }
 
+  void _playJumpAnimation() {
+    try {
+      animation?.play(jumpAnimation);
+    } catch (_) {
+      // The model has no animation with this name. Keep the current one.
+    }
+  }
+
   void playMovementAnimation({required bool running}) {
     animation?.play(running ? 'Run-loop' : 'Walk-loop');
   }
@@ -96,7 +128,6 @@ class GamePlayer {
   void setPosition(double newX, double newZ) {
     x = newX;
     z = newZ;
-
-    node?.position = vm.Vector3(x, 0, z);
+    node?.position = vm.Vector3(x, y, z);
   }
 }
