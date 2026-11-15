@@ -1,6 +1,7 @@
-// TODO: Implement the game screen.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
+import 'package:jungle_advanture/game/scenes/jungle_scene.dart';
 
 import '../../game/camera/game_camera.dart';
 import '../../game/player/player.dart';
@@ -24,6 +25,7 @@ class _GameScreenState extends State<GameScreen> {
   bool _ready = false;
   bool _loadingFailed = false;
   bool _sprinting = false;
+
   String _error = '';
 
   int _health = 100;
@@ -38,8 +40,11 @@ class _GameScreenState extends State<GameScreen> {
     try {
       await Scene.initializeStaticResources();
 
-      await _player.load();
+      // Load medieval village environment.
+      await JungleEnvironment.loadInto(_scene);
 
+      // Load player.
+      await _player.load();
       _scene.add(_player.node!);
 
       if (!mounted) return;
