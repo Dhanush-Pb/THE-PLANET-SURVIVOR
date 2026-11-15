@@ -55,3 +55,4 @@ android/local.properties
 *.glb
 *.gltf
 *.bin
+assets/models/player/Teen.glb
