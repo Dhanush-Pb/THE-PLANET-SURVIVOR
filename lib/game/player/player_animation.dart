@@ -14,7 +14,18 @@ class PlayerAnimation {
   List<String> get animationNames =>
       player.parsedAnimations.map((a) => a.name).toList();
 
-  void play(String name) {
+  String? _find(List<String> keywords) {
+    for (final name in animationNames) {
+      final lower = name.toLowerCase();
+
+      if (keywords.every((word) => lower.contains(word))) {
+        return name;
+      }
+    }
+    return null;
+  }
+
+  void play(String name, {bool loop = true}) {
     if (_currentName == name) return;
 
     final animation = player.findAnimationByName(name);
@@ -24,77 +35,90 @@ class PlayerAnimation {
       return;
     }
 
-    _currentClip?.pause();
+    // Remove the previous animation's influence on the character.
+    if (_currentClip != null) {
+      _currentClip!.weight = 0.0;
+      _currentClip!.stop();
+    }
 
     final clip = _clips.putIfAbsent(
       name,
       () => player.createAnimationClip(animation),
     );
 
-    clip.loop = true;
+    // Only the selected animation controls the character's pose.
+    clip.weight = 1.0;
+    clip.loop = loop;
     clip.replay();
 
     _currentClip = clip;
     _currentName = name;
   }
 
-  String? _find(List<String> keywords) {
-    for (final name in animationNames) {
-      final lower = name.toLowerCase();
-
-      if (keywords.every(lower.contains)) {
-        return name;
-      }
-    }
-
-    return null;
-  }
-
+  // Normal standing pose.
   void playIdle() {
-    play(_find(['idle']) ?? 'Idle-loop');
+    play('Idle-loop');
   }
 
+  // Ground movement.
   void playWalk() {
-    play(_find(['walk']) ?? 'Walk-loop');
+    play('Walk-loop');
   }
 
   void playRun() {
-    play(_find(['run']) ?? 'Run-loop');
+    play('Run-loop');
   }
 
   void playBackward() {
-    play(_find(['backward']) ?? 'Walk backwards-loop');
+    play('Walk backwards-loop');
   }
 
   void playLeft() {
-    play(_find(['strafe', 'left']) ?? 'Strafe left-loop');
+    play('Strafe left-loop');
   }
 
   void playRight() {
-    play(_find(['strafe', 'right']) ?? 'Strafe right-loop');
+    play('Strafe right-loop');
   }
 
-  void playJump() {
-    final name = _find(['jump']) ?? _find(['leap']);
+  // Jump sequence.
+  void playJumpStart() {
+    play('Jump start', loop: false);
+  }
 
-    if (name != null) play(name);
+  void playJumpAir() {
+    play('Jump (in air)-loop');
+  }
+
+  void playJumpLand() {
+    play('Jump land', loop: false);
   }
 
   void playFall() {
-    final name = _find(['fall']);
-
-    if (name != null) play(name);
+    play('Fall', loop: false);
   }
 
-  void playLand() {
-    final name = _find(['land']);
-
-    if (name != null) play(name);
+  // Other actions.
+  void playPunch() {
+    play('Punch', loop: false);
   }
 
+  void playRoll() {
+    play('Forward roll', loop: false);
+  }
+
+  // Stop current activity and return to normal idle.
   void stop() {
-    _currentClip?.stop();
+    if (_currentName == 'Idle-loop') return;
+
+    if (_currentClip != null) {
+      _currentClip!.weight = 0.0;
+      _currentClip!.stop();
+    }
+
     _currentClip = null;
     _currentName = null;
+
+    playIdle();
   }
 }
