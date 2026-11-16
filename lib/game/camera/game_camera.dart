@@ -10,6 +10,12 @@ class GameCamera {
   double pitch = 0.22;
   double distance = 9;
 
+  /// Drag direction. If a direction still feels wrong, flip it here:
+  ///  - dragging right shows the LEFT side  -> change invertHorizontal
+  ///  - dragging up looks the wrong way     -> change invertVertical
+  static const bool invertHorizontal = true;
+  static const bool invertVertical = false;
+
   /// Highest angle: almost directly above the player (top-down view).
   static const double maxPitch = 1.45;
 
@@ -40,9 +46,12 @@ class GameCamera {
   }
 
   void rotate(double dx, double dy, {double sensitivity = 0.0055}) {
+    final h = invertHorizontal ? 1.0 : -1.0;
+    final v = invertVertical ? -1.0 : 1.0;
+
     // Wrapped to 0..2pi so it can spin endlessly in either direction.
-    yaw = (yaw - dx * sensitivity) % _tau;
-    pitch = (pitch + dy * sensitivity).clamp(_minPitch, maxPitch).toDouble();
+    yaw = (yaw + h * dx * sensitivity) % _tau;
+    pitch = (pitch + v * dy * sensitivity).clamp(_minPitch, maxPitch).toDouble();
   }
 
   void zoom(double amount) {

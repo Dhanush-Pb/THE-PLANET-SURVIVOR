@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -32,6 +31,9 @@ class _GameScreenState extends State<GameScreen>
     with SingleTickerProviderStateMixin {
   static int _activeScreens = 0;
 
+  /// How much the camera moves per pixel of pinch. Raise it for faster zoom.
+  static const double _pinchZoomSpeed = 0.04;
+
   final Scene _scene = Scene();
 
   final GamePlayer _player = GamePlayer();
@@ -50,10 +52,11 @@ class _GameScreenState extends State<GameScreen>
   bool _sprinting = false;
   bool _crouching = false;
 
-  /// true: joystick on the right, buttons on the left.
-  bool _movementOnRight = true;
-
   String _error = '';
+
+  // Fingers (or mouse) on the look area, used for turning and pinch zoom.
+  final Map<int, Offset> _lookPointers = {};
+  double _lastPinchDistance = 0;
 
   // Health, finish and game state.
   _Phase _phase = _Phase.playing;
@@ -231,6 +234,51 @@ class _GameScreenState extends State<GameScreen>
   }
 
   // ------------------------------------------------------------------
+  // Look area: one finger turns the camera, two fingers pinch to zoom.
+  // ------------------------------------------------------------------
+
+  double _currentPinchDistance() {
+    final points = _lookPointers.values.take(2).toList();
+    return (points[0] - points[1]).distance;
+  }
+
+  void _onLookDown(PointerDownEvent event) {
+    _focus.requestFocus();
+
+    _lookPointers[event.pointer] = event.position;
+
+    // Remember the starting distance so the first move does not jump.
+    _lastPinchDistance =
+        _lookPointers.length >= 2 ? _currentPinchDistance() : 0;
+  }
+
+  void _onLookMove(PointerMoveEvent event) {
+    if (!_lookPointers.containsKey(event.pointer)) return;
+
+    _lookPointers[event.pointer] = event.position;
+
+    if (_lookPointers.length >= 2) {
+      // Pinch: fingers moving apart zoom in, together zoom out.
+      final distance = _currentPinchDistance();
+
+      if (_lastPinchDistance > 0) {
+        _camera.zoom((_lastPinchDistance - distance) * _pinchZoomSpeed);
+      }
+
+      _lastPinchDistance = distance;
+      return;
+    }
+
+    // One finger (or mouse drag): turn the camera.
+    _camera.rotate(event.delta.dx, event.delta.dy);
+  }
+
+  void _onLookEnd(PointerEvent event) {
+    _lookPointers.remove(event.pointer);
+    _lastPinchDistance = 0;
+  }
+
+  // ------------------------------------------------------------------
   // Keyboard: WASD / arrows, Space jump, Shift run, C crouch, Q dodge.
   // ------------------------------------------------------------------
 
@@ -317,27 +365,21 @@ class _GameScreenState extends State<GameScreen>
 
     final keys = HardwareKeyboard.instance;
 
-    bool down(LogicalKeyboardKey key) =>
-        keys.isLogicalKeyPressed(key);
+    bool down(LogicalKeyboardKey key) => keys.isLogicalKeyPressed(key);
 
     final forward =
-        down(LogicalKeyboardKey.keyW) ||
-        down(LogicalKeyboardKey.arrowUp);
+        down(LogicalKeyboardKey.keyW) || down(LogicalKeyboardKey.arrowUp);
 
     final back =
-        down(LogicalKeyboardKey.keyS) ||
-        down(LogicalKeyboardKey.arrowDown);
+        down(LogicalKeyboardKey.keyS) || down(LogicalKeyboardKey.arrowDown);
 
     final left =
-        down(LogicalKeyboardKey.keyA) ||
-        down(LogicalKeyboardKey.arrowLeft);
+        down(LogicalKeyboardKey.keyA) || down(LogicalKeyboardKey.arrowLeft);
 
     final right =
-        down(LogicalKeyboardKey.keyD) ||
-        down(LogicalKeyboardKey.arrowRight);
+        down(LogicalKeyboardKey.keyD) || down(LogicalKeyboardKey.arrowRight);
 
-    final shift =
-        down(LogicalKeyboardKey.shiftLeft) ||
+    final shift = down(LogicalKeyboardKey.shiftLeft) ||
         down(LogicalKeyboardKey.shiftRight);
 
     _controller.sprinting = _sprinting || shift;
@@ -409,9 +451,8 @@ class _GameScreenState extends State<GameScreen>
                                 .clamp(0.0, 1.0)
                                 .toDouble(),
                             backgroundColor: Colors.white24,
-                            color: low
-                                ? Colors.redAccent
-                                : Colors.greenAccent,
+                            color:
+                                low ? Colors.redAccent : Colors.greenAccent,
                           ),
                         ),
                       ),
@@ -437,25 +478,6 @@ class _GameScreenState extends State<GameScreen>
               ),
             ),
             const Spacer(),
-            // GestureDetector(
-            //   onTap: () {
-            //     setState(() {
-            //       _movementOnRight = !_movementOnRight;
-            //     });
-            //   },
-            //   child: Container(
-            //     padding: const EdgeInsets.all(10),
-            //     decoration: BoxDecoration(
-            //       color: Colors.black.withValues(alpha: 0.45),
-            //       shape: BoxShape.circle,
-            //       border: Border.all(color: Colors.white54),
-            //     ),
-            //     child: const Icon(
-            //       Icons.swap_horiz,
-            //       color: Colors.white,
-            //     ),
-            //   ),
-            // ),
           ],
         ),
       ),
@@ -600,69 +622,70 @@ class _GameScreenState extends State<GameScreen>
   // ------------------------------------------------------------------
   // Mobile controls.
   // ------------------------------------------------------------------
-Widget _controlsLayer() {
-  final pad = MediaQuery.of(context).padding;
 
-  return Stack(
-    children: [
-      // Joystick position
-      Positioned(
-        left: 30 + pad.left,
-        bottom: 30 + pad.bottom,
-        child: Joystick(
-          size: 150,
-          onChanged: (x, y) => _controller.setInput(x, y),
-        ),
-      ),
+  Widget _controlsLayer() {
+    final pad = MediaQuery.of(context).padding;
 
-      // Sprint button position
-      Positioned(
-        right: 40,
-        bottom: 195,
-        child: ActionButton(
-          icon: Icons.directions_run_rounded,
-          size: 54,
-          active: _sprinting,
-          onDown: _toggleSprint,
+    return Stack(
+      children: [
+        // Joystick position
+        Positioned(
+          left: 30 + pad.left,
+          bottom: 30 + pad.bottom,
+          child: Joystick(
+            size: 150,
+            onChanged: (x, y) => _controller.setInput(x, y),
+          ),
         ),
-      ),
 
-      // Crouch button position
-      Positioned(
-        right: 130,
-        bottom: 35,
-        child: ActionButton(
-          icon: Icons.airline_seat_recline_normal,
-          size: 54,
-          active: _crouching,
-          onDown: _toggleCrouch,
+        // Sprint button position
+        Positioned(
+          right: 40,
+          bottom: 195,
+          child: ActionButton(
+            icon: Icons.directions_run_rounded,
+            size: 54,
+            active: _sprinting,
+            onDown: _toggleSprint,
+          ),
         ),
-      ),
 
-      // Dodge button position
-      Positioned(
-        right: 40,
-        bottom: 125,
-        child: ActionButton(
-          icon: Icons.rotate_right,
-          size: 54,
-          onDown: _performDodge,
+        // Crouch button position
+        Positioned(
+          right: 130,
+          bottom: 35,
+          child: ActionButton(
+            icon: Icons.airline_seat_recline_normal,
+            size: 54,
+            active: _crouching,
+            onDown: _toggleCrouch,
+          ),
         ),
-      ),
 
-      // Jump button position
-      Positioned(
-        right: 30,
-        bottom: 30,
-        child: ActionButton(
-          icon: Icons.keyboard_double_arrow_up,
-          size: 78,
-          onDown: _controller.jump,
+        // Dodge button position
+        Positioned(
+          right: 40,
+          bottom: 125,
+          child: ActionButton(
+            icon: Icons.rotate_right,
+            size: 54,
+            onDown: _performDodge,
+          ),
         ),
-      ),
-    ],
-  );
-}
+
+        // Jump button position
+        Positioned(
+          right: 30,
+          bottom: 30,
+          child: ActionButton(
+            icon: Icons.keyboard_double_arrow_up,
+            size: 78,
+            onDown: _controller.jump,
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _hint() {
     return const Positioned(
@@ -725,111 +748,101 @@ Widget _controlsLayer() {
       );
     }
 
- 
-if (!_ready) {
-  return Scaffold(
-    backgroundColor: const Color(0xFF080E13),
-    body: Stack(
-      fit: StackFit.expand,
-      children: [
-        // Dark cinematic background.
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFF101F27),
-                Color(0xFF080E13),
-                Color(0xFF030608),
-              ],
+    if (!_ready) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF080E13),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Dark cinematic background.
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFF101F27),
+                    Color(0xFF080E13),
+                    Color(0xFF030608),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
 
-        // Loading content.
-        Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 42),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.landscape_rounded,
-                  size: 66,
-                  color: Color(0xFF72D6C1),
+            // Loading content.
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 42),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.landscape_rounded,
+                      size: 66,
+                      color: Color(0xFF72D6C1),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'THE PLANET SURVIVOR',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 5,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
+                    const Text(
+                      'A MYSTERIOUS SURVIVAL ADVENTURE',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFF8CA9A8),
+                        fontSize: 11,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 42),
+                    const LinearProgressIndicator(
+                      minHeight: 5,
+                      backgroundColor: Color(0xFF26343A),
+                      color: Color(0xFF72D6C1),
+                    ),
+                    const SizedBox(height: 15),
+                    Text(
+                      _loadingFailed
+                          ? 'LOADING FAILED'
+                          : 'PREPARING YOUR WORLD...',
+                      style: const TextStyle(
+                        color: Color(0xFFB7CBC7),
+                        fontSize: 11,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-
-                const SizedBox(height: 20),
-
-                const Text(
-                  'THE PLANET SURVIVOR',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 5,
-                  ),
-                ),
-
-                const SizedBox(height: 9),
-
-                const Text(
-                  'A MYSTERIOUS SURVIVAL ADVENTURE',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF8CA9A8),
-                    fontSize: 11,
-                    letterSpacing: 2,
-                  ),
-                ),
-
-                const SizedBox(height: 42),
-
-                const LinearProgressIndicator(
-                  minHeight: 5,
-                  backgroundColor: Color(0xFF26343A),
-                  color: Color(0xFF72D6C1),
-                ),
-
-                const SizedBox(height: 15),
-
-                Text(
-                  _loadingFailed
-                      ? 'LOADING FAILED'
-                      : 'PREPARING YOUR WORLD...',
-                  style: const TextStyle(
-                    color: Color(0xFFB7CBC7),
-                    fontSize: 11,
-                    letterSpacing: 2,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
 
-        const Positioned(
-          bottom: 24,
-          left: 0,
-          right: 0,
-          child: Text(
-            'EXPLORE • SURVIVE • DISCOVER',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 10,
-              letterSpacing: 3,
+            const Positioned(
+              bottom: 24,
+              left: 0,
+              right: 0,
+              child: Text(
+                'EXPLORE • SURVIVE • DISCOVER',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 10,
+                  letterSpacing: 3,
+                ),
+              ),
             ),
-          ),
+          ],
         ),
-      ],
-    ),
-  );
-}
-
+      );
+    }
 
     return Scaffold(
       body: Focus(
@@ -847,15 +860,11 @@ if (!_ready) {
             ),
             Positioned.fill(
               child: Listener(
-                onPointerDown: (_) {
-                  _focus.requestFocus();
-                },
-                onPointerMove: (event) {
-                  _camera.rotate(
-                    event.delta.dx,
-                    event.delta.dy,
-                  );
-                },
+                onPointerDown: _onLookDown,
+                onPointerMove: _onLookMove,
+                onPointerUp: _onLookEnd,
+                onPointerCancel: _onLookEnd,
+                // Mouse wheel zooms (web / desktop).
                 onPointerSignal: (event) {
                   if (event is PointerScrollEvent) {
                     _camera.zoom(event.scrollDelta.dy * 0.01);
