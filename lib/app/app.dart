@@ -9,7 +9,7 @@ class WildStepApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'THE WILD STEP',
+      title: 'THE PLANET SURVIVOR',
       home: GameScreen(),
     );
   }
