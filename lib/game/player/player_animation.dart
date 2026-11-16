@@ -5,7 +5,6 @@ class PlayerAnimation {
   PlayerAnimation(this.player);
 
   final Node player;
-
   final Map<String, AnimationClip> _clips = {};
 
   AnimationClip? _currentClip;
@@ -14,28 +13,20 @@ class PlayerAnimation {
   List<String> get animationNames =>
       player.parsedAnimations.map((a) => a.name).toList();
 
-  String? _find(List<String> keywords) {
-    for (final name in animationNames) {
-      final lower = name.toLowerCase();
-
-      if (keywords.every((word) => lower.contains(word))) {
-        return name;
-      }
-    }
-    return null;
-  }
-
-  void play(String name, {bool loop = true}) {
-    if (_currentName == name) return;
+  bool play(
+    String name, {
+    bool loop = true,
+    bool restart = false,
+  }) {
+    if (_currentName == name && !restart) return true;
 
     final animation = player.findAnimationByName(name);
 
     if (animation == null) {
       print('Animation unavailable: $name');
-      return;
+      return false;
     }
 
-    // Remove the previous animation's influence on the character.
     if (_currentClip != null) {
       _currentClip!.weight = 0.0;
       _currentClip!.stop();
@@ -46,44 +37,40 @@ class PlayerAnimation {
       () => player.createAnimationClip(animation),
     );
 
-    // Only the selected animation controls the character's pose.
     clip.weight = 1.0;
     clip.loop = loop;
     clip.replay();
 
     _currentClip = clip;
     _currentName = name;
+
+    return true;
   }
 
-  // Normal standing pose.
-  void playIdle() {
-    play('Idle-loop');
+  void playIdle() => play('Idle-loop');
+
+  void playWalk() => play('Walk-loop');
+
+  void playRun() => play('Run-loop');
+
+  void playLeft() => play('Strafe left-loop');
+
+  void playRight() => play('Strafe right-loop');
+
+  void playCrouchIdle() {
+    if (!play('Crouch idle-loop')) {
+      playIdle();
+    }
   }
 
-  // Ground movement.
-  void playWalk() {
-    play('Walk-loop');
+  void playCrouchWalk() {
+    if (!play('Slouch walk-loop')) {
+      playWalk();
+    }
   }
 
-  void playRun() {
-    play('Run-loop');
-  }
-
-  void playBackward() {
-    play('Walk backwards-loop');
-  }
-
-  void playLeft() {
-    play('Strafe left-loop');
-  }
-
-  void playRight() {
-    play('Strafe right-loop');
-  }
-
-  // Jump sequence.
   void playJumpStart() {
-    play('Jump start', loop: false);
+    play('Jump start', loop: false, restart: true);
   }
 
   void playJumpAir() {
@@ -91,26 +78,22 @@ class PlayerAnimation {
   }
 
   void playJumpLand() {
-    play('Jump land', loop: false);
+    play('Jump land', loop: false, restart: true);
   }
 
   void playFall() {
-    play('Fall', loop: false);
+    play('Fall', loop: false, restart: true);
   }
 
-  // Other actions.
   void playPunch() {
-    play('Punch', loop: false);
+    play('Punch', loop: false, restart: true);
   }
 
   void playRoll() {
-    play('Forward roll', loop: false);
+    play('Forward roll', loop: false, restart: true);
   }
 
-  // Stop current activity and return to normal idle.
   void stop() {
-    if (_currentName == 'Idle-loop') return;
-
     if (_currentClip != null) {
       _currentClip!.weight = 0.0;
       _currentClip!.stop();

@@ -1,3 +1,4 @@
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -12,16 +13,9 @@ import 'player_animation.dart';
 class GamePlayer {
   static const String modelPath = 'assets/models/player/Teen.glb';
 
-  /// Imported models face -z. If the character walks with its back or side
-  /// first, try 0, math.pi / 2, or -math.pi / 2.
   static const double facingOffset = math.pi;
-
   static const double turnSpeed = 0.22;
   static const double bodyRadius = 0.6;
-
-  /// Name of the jump animation inside your model.
-  /// Check the console line "Available animations" for the real names.
-  static const String jumpAnimation = 'Jump-loop';
 
   Node? node;
   PlayerAnimation? animation;
@@ -49,17 +43,27 @@ class GamePlayer {
 
     debugPrint('Available animations: ${animation!.animationNames}');
 
-    animation!.play('Idle-loop');
+    animation!.playIdle();
   }
 
-  void move(double dx, double dz) {
+  void move(
+    double dx,
+    double dz, {
+    double? faceYaw,
+  }) {
     final n = node;
     if (n == null) return;
 
     x += dx;
     z += dz;
 
-    final pushed = Collision.pushOut(x, z, bodyRadius, WorldBuilder.obstacles);
+    final pushed = Collision.pushOut(
+      x,
+      z,
+      bodyRadius,
+      WorldBuilder.obstacles,
+    );
+
     x = pushed.$1;
     z = pushed.$2;
 
@@ -70,17 +74,19 @@ class GamePlayer {
     n.position = vm.Vector3(x, y, z);
 
     if (dx != 0 || dz != 0) {
-      _turnToward(math.atan2(dx, dz) + facingOffset);
+      _turnToward(
+        faceYaw ?? (math.atan2(dx, dz) + facingOffset),
+      );
     }
   }
 
   bool jump() {
     if (!_jump.jump()) return false;
-    _playJumpAnimation();
+
+    animation?.playJumpStart();
     return true;
   }
 
-  /// Returns true on the frame the player lands.
   bool update(double dt) {
     final landed = _jump.update(dt);
     node?.position = vm.Vector3(x, y, z);
@@ -93,6 +99,7 @@ class GamePlayer {
     while (diff > math.pi) {
       diff -= math.pi * 2;
     }
+
     while (diff < -math.pi) {
       diff += math.pi * 2;
     }
@@ -104,25 +111,53 @@ class GamePlayer {
     }
 
     if (_yaw == _lastAppliedYaw) return;
+
     _lastAppliedYaw = _yaw;
 
-    node!.rotation = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), _yaw);
-  }
-
-  void _playJumpAnimation() {
-    try {
-      animation?.play(jumpAnimation);
-    } catch (_) {
-      // The model has no animation with this name. Keep the current one.
-    }
+    node!.rotation = vm.Quaternion.axisAngle(
+      vm.Vector3(0, 1, 0),
+      _yaw,
+    );
   }
 
   void playMovementAnimation({required bool running}) {
-    animation?.play(running ? 'Run-loop' : 'Walk-loop');
+    if (running) {
+      animation?.playRun();
+    } else {
+      animation?.playWalk();
+    }
   }
 
   void playIdleAnimation() {
-    animation?.play('Idle-loop');
+    animation?.playIdle();
+  }
+
+  void playStrafeLeftAnimation() {
+    animation?.playLeft();
+  }
+
+  void playStrafeRightAnimation() {
+    animation?.playRight();
+  }
+
+  void playCrouchIdleAnimation() {
+    animation?.playCrouchIdle();
+  }
+
+  void playCrouchWalkAnimation() {
+    animation?.playCrouchWalk();
+  }
+
+  void playJumpAirAnimation() {
+    animation?.playJumpAir();
+  }
+
+  void playJumpLandAnimation() {
+    animation?.playJumpLand();
+  }
+
+  void playRollAnimation() {
+    animation?.playRoll();
   }
 
   void setPosition(double newX, double newZ) {

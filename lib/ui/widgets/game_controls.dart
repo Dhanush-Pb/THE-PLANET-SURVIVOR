@@ -1,7 +1,7 @@
-// TODO: Implement the game controls widget.
+
 import 'package:flutter/material.dart';
 
-/// Round action button (Jump, Run).
+/// Round action button used for Jump, Sprint, Crouch and Dodge.
 class ActionButton extends StatefulWidget {
   const ActionButton({
     super.key,
