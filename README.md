@@ -106,7 +106,7 @@ Add a license for your code (for example MIT) and update this section.
 
 **Your Name**
 
-- GitHub: [@YOUR_USERNAME](http://github.com/Dhanush-Pb)
+- GitHub: [@Dhanush-Pb](http://github.com/Dhanush-Pb)
 
 ---
 
