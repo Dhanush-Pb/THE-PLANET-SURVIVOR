@@ -1,17 +1,29 @@
-# jungle_advanture
+PLANET SURVIVOR
 
-A new Flutter project.
+A 3D survival game built with Flutter and flutter_scene.
 
-## Getting Started
+FEATURES
+- Immersive alien-planet environment
+- 3D character with animations
+- Interactive movement and gameplay
+- Walking, running, jumping, crouching and dodging
+- Orbit camera with rotation and zoom
+- Coin collection system
+- Health-based survival mechanics
+- Touch controls and keyboard support
 
-This project is a starting point for a Flutter application.
+TECH STACK
+- Flutter and Dart: cross-platform development and game logic
+- flutter_scene: 3D rendering and scene management
+- vector_math: 3D mathematics and transformations
 
-A few resources to get you started if this is your first Flutter project:
+3D CHARACTER ASSET
+- Source: Ara 3D Gen
+- Format: GLB
+- Animations: 212 embedded animations
+- License: CC0
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+ABOUT
+PLANET SURVIVOR is a personal game-development experiment exploring what is possible when building a 3D game with Flutter.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Beyond apps. Into 3D worlds.
